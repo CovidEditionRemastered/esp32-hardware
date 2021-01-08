@@ -98,7 +98,24 @@
         <p>Soapy's Password: <input type="network-password" id="network-pw"/></p>
     </div>
     <br>
-    <div id="submit-network">Send to Soapy's Server</div>
+    <div id="submitnetwork">Send to Soapy's Server</div>
+    <script>
+        var UUID = "84fa598c-9ee1-47b8-9625-8e38e70dc1f3";
+        var networkPw = document.getElementById("network-pw");
+
+        var networkSubmit = document.getElementById("submitnetwork");
+
+        networkSubmit.addEventListener("click", function () {
+            var uuidVal = UUID.value;
+            var nwPw = networkPw.value;
+
+            var domain = "https://domain/"
+
+            fetch(domain +  `Hardware/${UUID}?password=${nwPw}`, {
+                method: "PUT"
+            });
+        })
+    </script>
 
 </body>
 

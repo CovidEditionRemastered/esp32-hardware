@@ -6,6 +6,9 @@ extern "C" {
 #include "crypto/base64.h"
 }
 
+// Relay Switch Details
+#define RELAY_PIN 22
+
 // Access Point Details
 const char* ssid = "ESP32-Access-Point";
 const char* password = "123456789";
@@ -22,8 +25,30 @@ WebServer server(80);
 
 // MQTT server details
 void publish_callback(char* topic, byte* payload, unsigned int length) {
-    Serial.print("Received published message from");
-    Serial.println(topic);
+    String uuid;
+    String state_temp;
+    uint8_t flip = 0;
+    uint8_t received_state;
+    for (int i = 0; i < length; i++) {
+        if ((char)payload[i] == ':') {
+            flip = 1;
+        } else if (flip) {
+            state_temp += (char)payload[i];
+        } else {
+            uuid += (char)payload[i];
+        }
+    }
+
+    Serial.println();
+    Serial.println(state_temp);
+    Serial.println(uuid);
+    if (state_temp == "True") {
+        digitalWrite(RELAY_PIN, HIGH);
+        Serial.println("MQTT on");
+    } else {
+        digitalWrite(RELAY_PIN, LOW);
+        Serial.println("MQTT off");
+    }
 }
 
 #define mqtt_server "node02.myqtthub.com"
@@ -33,36 +58,6 @@ void publish_callback(char* topic, byte* payload, unsigned int length) {
 #define mqtt_password "password"
 WiFiClient espClient;
 PubSubClient client(mqtt_server, mqtt_port, publish_callback, espClient);
-
-void setup() {
-    Serial.begin(115200);
-
-    // ! Set up Access Point
-    Serial.print("Setting AP (Access Point)");
-    WiFi.softAP(ssid, password);
-    IPAddress IP = WiFi.softAPIP();
-    Serial.print("AP IP address: ");
-    Serial.println(IP);
-
-    // ! Initialize MQTT
-    Serial.println("MQTT Settings: ");
-    Serial.print(mqtt_server);
-    Serial.print(mqtt_port);
-
-    // ! Initialize Webserver
-    server.on("/", handle_OnConnect);
-    server.on("/connect", HTTP_POST, handle_ConnectToHomeWifi);
-
-    server.begin();
-    Serial.println("HTTP Webserver has started");
-}
-
-void loop() {
-    server.handleClient();
-    if (client.connected()) {
-        client.loop();
-    }
-}
 
 String SendHTML() {
     const char ptr[] PROGMEM = R"rawliteral(
@@ -167,6 +162,23 @@ String SendHTML() {
             </div>
             <br>
             <div id="submit-network">Send to Soapy's Server</div>
+            <script>
+                var UUID = "84fa598c-9ee1-47b8-9625-8e38e70dc1f3";
+                var networkPw = document.getElementById("network-pw");
+
+                var networkSubmit = document.getElementById("submit-network");
+
+                networkSubmit.addEventListener("click", function () {
+                    var uuidVal = UUID.value;
+                    var nwPw = networkPw.value;
+
+                    var domain = "https://domain/"
+
+                    fetch(domain +  `Hardware/${UUID}?password=${nwPw}`, {
+                        method: "PUT"
+                    });
+                })
+            </script>
 
         </body>
 
@@ -174,6 +186,27 @@ String SendHTML() {
     )rawliteral";
 
     return ptr;
+}
+
+void connect_MQTT() {
+    Serial.println("Attempting MQTT Broker Connection");
+
+    while (!client.connected()) {
+        Serial.println("Attempting MQTT connection~");
+        Serial.println(mqtt_clientId);
+        Serial.println(mqtt_username);
+        Serial.println(mqtt_password);
+        if (client.connect(mqtt_clientId, mqtt_username, mqtt_password)) {
+            uint8_t status = client.subscribe("esp32/update");
+            Serial.print("Subscription status: ");
+            Serial.println(status);
+            Serial.println("MQTT connected!");
+        } else {
+            Serial.println("Fail. Retrying after 5 sec");
+            Serial.println(client.state());
+            delay(5000);
+        }
+    }
 }
 
 // ! HANDLERS FOR ROUTES
@@ -186,10 +219,8 @@ void handle_ConnectToHomeWifi() {
     Serial.println("Saving SSID and Password to connect to Station");
     HomeSSID = server.arg("ssidVal");
 
-    char* EncodedPassword = (char*)server.arg("password").c_str();  // Base64 encoded
-    // Serial.print("Encoded Password is: ");
-    // Serial.println(EncodedPassword);
-    // delay(100);
+    String EncodedPasswordSlow = server.arg("password");  // Base64 encoded
+    char* EncodedPassword = (char*) EncodedPasswordSlow.c_str();
     size_t outputLength;
 
     unsigned char* DecodedPassword =
@@ -222,23 +253,33 @@ void handle_ConnectToHomeWifi() {
     connect_MQTT();
 }
 
-void connect_MQTT() {
-    Serial.println("Attempting MQTT Broker Connection");
+void setup() {
+    pinMode(RELAY_PIN, OUTPUT);
+    Serial.begin(115200);
 
-    while (!client.connected()) {
-        Serial.println("Attempting MQTT connection~");
-        Serial.println(mqtt_clientId);
-        Serial.println(mqtt_username);
-        Serial.println(mqtt_password);
-        if (client.connect(mqtt_clientId, mqtt_username, mqtt_password)) {
-            uint8_t status = client.subscribe("esp32/update");
-            Serial.print("Subscription status: ");
-            Serial.println(status);
-            Serial.println("MQTT connected!");
-        } else {
-            Serial.println("Fail. Retrying after 5 sec");
-            Serial.println(client.state());
-            delay(5000);
-        }
+    // ! Set up Access Point
+    Serial.print("Setting AP (Access Point)");
+    WiFi.softAP(ssid, password);
+    IPAddress IP = WiFi.softAPIP();
+    Serial.print("AP IP address: ");
+    Serial.println(IP);
+
+    // ! Initialize MQTT
+    Serial.println("MQTT Settings: ");
+    Serial.print(mqtt_server);
+    Serial.print(mqtt_port);
+
+    // ! Initialize Webserver
+    server.on("/", handle_OnConnect);
+    server.on("/connect", HTTP_POST, handle_ConnectToHomeWifi);
+
+    server.begin();
+    Serial.println("HTTP Webserver has started");
+}
+
+void loop() {
+    server.handleClient();
+    if (client.connected()) {
+        client.loop();
     }
 }
