@@ -43,10 +43,10 @@ void publish_callback(char* topic, byte* payload, unsigned int length) {
     Serial.println(state_temp);
     Serial.println(uuid);
     if (state_temp == "True") {
-        digitalWrite(RELAY_PIN, HIGH);
+        digitalWrite(RELAY_PIN, LOW);
         Serial.println("MQTT on");
     } else {
-        digitalWrite(RELAY_PIN, LOW);
+        digitalWrite(RELAY_PIN, HIGH);
         Serial.println("MQTT off");
     }
 }
