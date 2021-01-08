@@ -1,15 +1,15 @@
 #include <WebServer.h>
 #include <WiFi.h>
+#include <PubSubClient.h>
+
 extern "C" {
 #include "crypto/base64.h"
 }
 
-#define ONBOARD_LED 2
-
 // Access Point Details
 const char* ssid = "ESP32-Access-Point";
 const char* password = "123456789";
-IPAddress ip(192, 168, 1, 1);
+IPAddress ip(192, 168, 4, 1);
 IPAddress gateway(192, 168, 1, 254);
 IPAddress subnet(255, 255, 255, 0);
 
@@ -20,17 +20,34 @@ String HomePassword = "";
 // Webserver Details
 WebServer server(80);
 
+// MQTT server details
+void publish_callback(char* topic, byte* payload, unsigned int length) {
+    Serial.print("Received published message from");
+    Serial.println(topic);
+}
+
+#define mqtt_server "node02.myqtthub.com"
+#define mqtt_port 1883
+#define mqtt_clientId "soapy_esp32"
+#define mqtt_username "esp32_1"
+#define mqtt_password "password"
+WiFiClient espClient;
+PubSubClient client(mqtt_server, mqtt_port, publish_callback, espClient);
+
 void setup() {
     Serial.begin(115200);
-    pinMode(ONBOARD_LED, OUTPUT);
 
     // ! Set up Access Point
     Serial.print("Setting AP (Access Point)");
     WiFi.softAP(ssid, password);
-    WiFi.softAPConfig(ip, gateway, subnet);
     IPAddress IP = WiFi.softAPIP();
     Serial.print("AP IP address: ");
     Serial.println(IP);
+
+    // ! Initialize MQTT
+    Serial.println("MQTT Settings: ");
+    Serial.print(mqtt_server);
+    Serial.print(mqtt_port);
 
     // ! Initialize Webserver
     server.on("/", handle_OnConnect);
@@ -40,7 +57,12 @@ void setup() {
     Serial.println("HTTP Webserver has started");
 }
 
-void loop() { server.handleClient(); }
+void loop() {
+    server.handleClient();
+    if (client.connected()) {
+        client.loop();
+    }
+}
 
 String SendHTML() {
     const char ptr[] PROGMEM = R"rawliteral(
@@ -164,8 +186,10 @@ void handle_ConnectToHomeWifi() {
     Serial.println("Saving SSID and Password to connect to Station");
     HomeSSID = server.arg("ssidVal");
 
-    char* EncodedPassword =
-        (char*)server.arg("password").c_str();  // Base64 encoded
+    char* EncodedPassword = (char*)server.arg("password").c_str();  // Base64 encoded
+    // Serial.print("Encoded Password is: ");
+    // Serial.println(EncodedPassword);
+    // delay(100);
     size_t outputLength;
 
     unsigned char* DecodedPassword =
@@ -190,12 +214,31 @@ void handle_ConnectToHomeWifi() {
     while (WiFi.status() != WL_CONNECTED) {
         delay(500);
         Serial.print(".");
-        digitalWrite(ONBOARD_LED, HIGH);
-        delay(500);
-        Serial.print(".");
-        digitalWrite(ONBOARD_LED, LOW);
     }
     Serial.println("");
     Serial.println("WIFI CONNECTED");
     Serial.println(WiFi.localIP());
+
+    connect_MQTT();
+}
+
+void connect_MQTT() {
+    Serial.println("Attempting MQTT Broker Connection");
+
+    while (!client.connected()) {
+        Serial.println("Attempting MQTT connection~");
+        Serial.println(mqtt_clientId);
+        Serial.println(mqtt_username);
+        Serial.println(mqtt_password);
+        if (client.connect(mqtt_clientId, mqtt_username, mqtt_password)) {
+            uint8_t status = client.subscribe("esp32/update");
+            Serial.print("Subscription status: ");
+            Serial.println(status);
+            Serial.println("MQTT connected!");
+        } else {
+            Serial.println("Fail. Retrying after 5 sec");
+            Serial.println(client.state());
+            delay(5000);
+        }
+    }
 }
