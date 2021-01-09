@@ -172,7 +172,7 @@ String SendHTML() {
                     var uuidVal = UUID.value;
                     var nwPw = networkPw.value;
 
-                    var domain = "https://domain/"
+                    var domain = "https://core.soapy.atomi.cloud/"
 
                     fetch(domain +  `Hardware/${UUID}?password=${nwPw}`, {
                         method: "PUT"
